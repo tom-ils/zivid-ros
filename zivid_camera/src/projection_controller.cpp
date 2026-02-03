@@ -100,6 +100,10 @@ ProjectionController::ProjectionController(
   capture_2d_service_ = node_.create_service<std_srvs::srv::Trigger>(
     "projection/capture_2d",
     std::bind(&ProjectionController::capture2DServiceHandler, this, _1, _2, _3));
+  pixels_from_3d_points_service_ =
+    node_.create_service<zivid_interfaces::srv::ProjectionPixelsFrom3DPoints>(
+      "projection/pixels_from_3d_points",
+      std::bind(&ProjectionController::pixelsFrom3DPointsServiceHandler, this, _1, _2, _3));
 }
 
 ProjectionController::~ProjectionController() = default;
@@ -204,6 +208,57 @@ void ProjectionController::statusServiceHandler(
       RCLCPP_INFO_STREAM(node_.get_logger(), "Query done");
     },
     response, node_.get_logger(), "ProjectionStatus");
+}
+
+void ProjectionController::pixelsFrom3DPointsServiceHandler(
+  const std::shared_ptr<rmw_request_id_t> /*request_header*/,
+  const std::shared_ptr<zivid_interfaces::srv::ProjectionPixelsFrom3DPoints::Request> request,
+  std::shared_ptr<zivid_interfaces::srv::ProjectionPixelsFrom3DPoints::Response> response)
+{
+  RCLCPP_INFO_STREAM(node_.get_logger(), __func__);
+
+  try {
+    response->success = true;
+
+    if (request->camera_points_3d.empty()) {
+      response->projector_points_2d.clear();
+      RCLCPP_INFO_STREAM(node_.get_logger(), "No points provided, returning empty result");
+      return;
+    }
+
+    RCLCPP_INFO_STREAM(
+      node_.get_logger(),
+      "Converting " << request->camera_points_3d.size() << " 3D points to projector pixels");
+
+    // Convert geometry_msgs::Point to Zivid::PointXYZ
+    // Note: Input points are in millimeters (as per service definition)
+    std::vector<Zivid::PointXYZ> zivid_points;
+    zivid_points.reserve(request->camera_points_3d.size());
+    for (const auto & pt : request->camera_points_3d) {
+      zivid_points.emplace_back(
+        static_cast<float>(pt.x), static_cast<float>(pt.y), static_cast<float>(pt.z));
+    }
+
+    // Call Zivid SDK to convert 3D points to projector pixels
+    const auto projector_pixels = Zivid::Projection::pixelsFrom3DPoints(camera_, zivid_points);
+
+    // Convert Zivid::PointXY to geometry_msgs::Point
+    response->projector_points_2d.reserve(projector_pixels.size());
+    for (const auto & pixel : projector_pixels) {
+      response->projector_points_2d.push_back(pixelCoordinatesToGeometryMsgPoint(pixel));
+    }
+
+    RCLCPP_INFO_STREAM(
+      node_.get_logger(), "Successfully converted " << response->projector_points_2d.size()
+                                                    << " points to projector pixels");
+  } catch (const std::exception & exception) {
+    const auto exception_message = Zivid::toString(exception);
+    RCLCPP_ERROR_STREAM(
+      node_.get_logger(),
+      "pixelsFrom3DPoints failed with exception: \"" << exception_message << "\"");
+    response->success = false;
+    response->error_msg = exception_message;
+  }
 }
 
 }  // namespace zivid_camera

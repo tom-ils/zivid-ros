@@ -30,6 +30,7 @@ rosidl_generate_interfaces(zivid_interfaces
                            "srv/InfieldCorrectionCompute.srv"
                            "srv/InfieldCorrectionRead.srv"
                            "srv/IsConnected.srv"
+                           "srv/ProjectionPixelsFrom3DPoints.srv"
                            "srv/ProjectionResolution.srv"
                            "srv/ProjectionStart.srv"
                            "srv/ProjectionStatus.srv"
